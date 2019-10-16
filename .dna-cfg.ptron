@@ -1,0 +1,14 @@
+src_dir: "../dna"
+go_package_prefix: "github.com/wxio/grpcar"
+includes: "../dna/store"
+plugin_output_dir: <
+  path: "."
+  generator: <
+    plugin: <
+      go: <
+        paths: Source_Relative
+        plugins: Grpc
+      >
+    >
+  >
+>
