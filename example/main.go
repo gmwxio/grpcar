@@ -10,17 +10,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fullstorydev/grpcurl"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/protoc-gen-go/descriptor"
+	"github.com/jhump/protoreflect/grpcreflect"
 	"github.com/wxio/grpcar/internal/proxy"
 
 	// "github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	reflectpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 
+	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
 	"github.com/wxio/grpcar/example/echosvc"
 	pb "github.com/wxio/grpcar/example/proto/echo"
+	// "github.com/wxio/grpcar/options"
 )
 
 var (
@@ -29,6 +37,7 @@ var (
 
 	errMissingMetadata = status.Errorf(codes.InvalidArgument, "missing metadata")
 	errInvalidToken    = status.Errorf(codes.Unauthenticated, "invalid token")
+	target             = "localhost:50051"
 )
 
 // // var conn *grpc.ClientConn
@@ -96,13 +105,71 @@ func main() {
 	)
 
 	if *proxyIt { // Register a TestService with 4 of its methods explicitly.
-		proxy.RegisterService(svr, director,
-			"wxio.grpcar.example.echo.Echo",
-			"UnaryEcho", "ServerStreamingEcho", "ClientStreamingEcho", "BidirectionalStreamingEcho")
-		proxy.RegisterService(svr, director,
-			"grpc.reflection.v1alpha.ServerReflection",
-			"ServerReflectionInfo",
-		)
+
+		ctx := context.Background()
+		network := "tcp"
+		var creds credentials.TransportCredentials
+		var opts []grpc.DialOption
+		cc, err := grpcurl.BlockingDial(ctx, network, target, creds, opts...)
+		if err != nil {
+			log.Fatalf("Failed to dial target host %q err %v\n", target, err)
+		}
+		var descSource grpcurl.DescriptorSource
+		var refClient *grpcreflect.Client
+		refCtx := context.Background()
+		grpcRefectClient := reflectpb.NewServerReflectionClient(cc)
+		refClient = grpcreflect.NewClient(refCtx, grpcRefectClient)
+		descSource = grpcurl.DescriptorSourceFromServer(ctx, refClient)
+
+		// descSource, err := getGRPCDefs()
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		if svrs, err := descSource.ListServices(); err != nil {
+			log.Fatalf("%v", err)
+		} else {
+			for _, ds := range svrs {
+				// fmt.Printf("found dynamic service %s\n", ds)
+				desc, err := descSource.FindSymbol(ds)
+				if err != nil {
+					fmt.Printf("  err find symbol for dynamic service %s err: %v\n", ds, err)
+					continue
+				}
+				// fmt.Printf("%[1]T\n    %[1]v \n", desc.AsProto())
+				if sdp, ok := desc.AsProto().(*descriptor.ServiceDescriptorProto); ok {
+
+					// sOp, _ := proto.GetExtension(sdp.GetOptions(), options.E_Service)
+					// if sOp != nil {
+					// 	secOp := sOp.(*options.Service)
+					fmt.Printf("  Service Options %s - op %+v\n", ds, sdp.GetOptions())
+					// }
+					// fmt.Printf("%[1]T\n    %[1]v \n", sdp)
+					ms := []string{}
+					for _, m := range sdp.GetMethod() {
+						opts := m.GetOptions()
+						// op, _ := proto.GetExtension(opts, options.E_Method)
+						op, _ := proto.GetExtension(opts, options.E_Openapiv2Operation)
+						if op != nil {
+							secOp := op.(*options.Operation)
+							fmt.Printf("  %s - op %+v\n", m.GetName(), secOp)
+						}
+						ms = append(ms, m.GetName())
+					}
+					proxy.RegisterService(svr, director, ds, ms...)
+					fmt.Printf("proxy register %s %v\n", ds, ms)
+				} else {
+					fmt.Printf("WARNNG %T is not 'github.com/golang/protobuf/protoc-gen-go/descriptor'\n", sdp)
+				}
+			}
+		}
+		// descSource.
+		// proxy.RegisterService(svr, director,
+		// 	"wxio.grpcar.example.echo.Echo",
+		// 	"UnaryEcho", "ServerStreamingEcho", "ClientStreamingEcho", "BidirectionalStreamingEcho")
+		// proxy.RegisterService(svr, director,
+		// 	"grpc.reflection.v1alpha.ServerReflection",
+		// 	"ServerReflectionInfo",
+		// )
 
 	} else {
 		// Register EchoServer on the server.
@@ -113,6 +180,25 @@ func main() {
 	if err := svr.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+}
+
+func getGRPCDefs() (grpcurl.DescriptorSource, error) {
+	ctx := context.Background()
+	network := "tcp"
+	var creds credentials.TransportCredentials
+	var opts []grpc.DialOption
+	cc, err := grpcurl.BlockingDial(ctx, network, target, creds, opts...)
+	if err != nil {
+		fmt.Printf("Failed to dial target host %q err %v\n", target, err)
+		return nil, err
+	}
+	var descSource grpcurl.DescriptorSource
+	var refClient *grpcreflect.Client
+	refCtx := context.Background()
+	grpcRefectClient := reflectpb.NewServerReflectionClient(cc)
+	refClient = grpcreflect.NewClient(refCtx, grpcRefectClient)
+	descSource = grpcurl.DescriptorSourceFromServer(ctx, refClient)
+	return descSource, nil
 }
 
 // parseDialTarget returns the network and address to pass to dialer

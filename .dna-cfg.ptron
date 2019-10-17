@@ -1,6 +1,10 @@
-src_dir: "../dna"
+src_dir: "../dna/store/wxio"
 go_package_prefix: "github.com/wxio/grpcar"
-includes: "../dna/store"
+includes: [ 
+  "../dna/store/wxio",
+  "../dna/vendor/googleapis",
+  "../dna/vendor"
+]
 plugin_output_dir: <
   path: "."
   generator: <
