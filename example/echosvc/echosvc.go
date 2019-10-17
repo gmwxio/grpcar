@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	pb "github.com/wxio/grpcar/example/proto/echo"
+	pb "github.com/wxio/grpcar/example/echo"
 )
 
 type echosvc struct {

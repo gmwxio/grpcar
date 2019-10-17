@@ -25,11 +25,13 @@ import (
 	reflectpb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 
-	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
+	swagger "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
+	pb "github.com/wxio/grpcar/example/echo"
 	"github.com/wxio/grpcar/example/echosvc"
-	pb "github.com/wxio/grpcar/example/proto/echo"
-	// "github.com/wxio/grpcar/options"
+	"github.com/wxio/grpcar/options"
 )
+
+var _ = swagger.E_Openapiv2Operation
 
 var (
 	port    = flag.Int("port", 50051, "the port to serve on")
@@ -121,6 +123,10 @@ func main() {
 		refClient = grpcreflect.NewClient(refCtx, grpcRefectClient)
 		descSource = grpcurl.DescriptorSourceFromServer(ctx, refClient)
 
+		// grpcRefectClient.ServerReflectionInfo
+
+		// refClient.FileContainingSymbol
+
 		// descSource, err := getGRPCDefs()
 		if err != nil {
 			log.Fatalf("%v", err)
@@ -135,22 +141,24 @@ func main() {
 					fmt.Printf("  err find symbol for dynamic service %s err: %v\n", ds, err)
 					continue
 				}
+				//
+
 				// fmt.Printf("%[1]T\n    %[1]v \n", desc.AsProto())
 				if sdp, ok := desc.AsProto().(*descriptor.ServiceDescriptorProto); ok {
 
-					// sOp, _ := proto.GetExtension(sdp.GetOptions(), options.E_Service)
-					// if sOp != nil {
-					// 	secOp := sOp.(*options.Service)
-					fmt.Printf("  Service Options %s - op %+v\n", ds, sdp.GetOptions())
-					// }
+					sOp, _ := proto.GetExtension(sdp.GetOptions(), options.E_Service)
+					if sOp != nil {
+						secOp := sOp.(*options.Service)
+						fmt.Printf("  Service Options %s - op %+v\n", ds, secOp)
+					}
 					// fmt.Printf("%[1]T\n    %[1]v \n", sdp)
 					ms := []string{}
 					for _, m := range sdp.GetMethod() {
 						opts := m.GetOptions()
-						// op, _ := proto.GetExtension(opts, options.E_Method)
-						op, _ := proto.GetExtension(opts, options.E_Openapiv2Operation)
+						op, _ := proto.GetExtension(opts, options.E_Method)
+						// op, _ := proto.GetExtension(opts, options.E_Openapiv2Operation)
 						if op != nil {
-							secOp := op.(*options.Operation)
+							secOp := op.(*options.Method)
 							fmt.Printf("  %s - op %+v\n", m.GetName(), secOp)
 						}
 						ms = append(ms, m.GetName())
@@ -170,7 +178,7 @@ func main() {
 		// 	"grpc.reflection.v1alpha.ServerReflection",
 		// 	"ServerReflectionInfo",
 		// )
-
+		refClient.Reset()
 	} else {
 		// Register EchoServer on the server.
 		pb.RegisterEchoServer(svr, echosvc.New())
@@ -180,25 +188,6 @@ func main() {
 	if err := svr.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
-}
-
-func getGRPCDefs() (grpcurl.DescriptorSource, error) {
-	ctx := context.Background()
-	network := "tcp"
-	var creds credentials.TransportCredentials
-	var opts []grpc.DialOption
-	cc, err := grpcurl.BlockingDial(ctx, network, target, creds, opts...)
-	if err != nil {
-		fmt.Printf("Failed to dial target host %q err %v\n", target, err)
-		return nil, err
-	}
-	var descSource grpcurl.DescriptorSource
-	var refClient *grpcreflect.Client
-	refCtx := context.Background()
-	grpcRefectClient := reflectpb.NewServerReflectionClient(cc)
-	refClient = grpcreflect.NewClient(refCtx, grpcRefectClient)
-	descSource = grpcurl.DescriptorSourceFromServer(ctx, refClient)
-	return descSource, nil
 }
 
 // parseDialTarget returns the network and address to pass to dialer
